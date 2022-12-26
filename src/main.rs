@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    error::Error,
-};
+use std::collections::{HashMap, VecDeque};
 
 struct VM {
     ip: usize,
@@ -20,10 +17,16 @@ impl VM {
         }
     }
 
-    fn pop(&mut self, dir: &Direction) -> i64 {
+    fn pop(&mut self, dir: &Direction) -> Result<i64, String> {
         match dir {
-            Direction::Left => self.data.pop_front().unwrap(),
-            Direction::Right => self.data.pop_back().unwrap(),
+            Direction::Left => self
+                .data
+                .pop_front()
+                .ok_or("Could not pop from front of deque.".into()),
+            Direction::Right => self
+                .data
+                .pop_back()
+                .ok_or("Could not pop from back of deque.".into()),
         }
     }
 
@@ -82,103 +85,103 @@ impl VM {
             };
             match op {
                 "add" => {
-                    let a = self.pop(&dir);
-                    let b = self.pop(&dir);
+                    let a = self.pop(&dir)?;
+                    let b = self.pop(&dir)?;
                     self.push(&dir, a + b);
                 }
                 "sub" => {
-                    let a = self.pop(&dir);
-                    let b = self.pop(&dir);
+                    let a = self.pop(&dir)?;
+                    let b = self.pop(&dir)?;
                     self.push(&dir, b - a);
                 }
                 "jmp" => {
-                    self.ip = self.pop(&dir) as usize;
+                    self.ip = self.pop(&dir)? as usize;
                     continue;
                 }
                 "jmpif" => {
-                    let addr = self.pop(&dir);
-                    let cond = self.pop(&dir);
+                    let addr = self.pop(&dir)?;
+                    let cond = self.pop(&dir)?;
                     if cond == 1 {
                         self.ip = addr as usize;
                         continue;
                     }
                 }
                 "swap" => {
-                    let a = self.pop(&dir);
-                    let b = self.pop(&dir);
+                    let a = self.pop(&dir)?;
+                    let b = self.pop(&dir)?;
                     self.push(&dir, a);
                     self.push(&dir, b);
                 }
                 "move" => {
-                    let a = self.pop(&dir);
-                    self.push(&dir.invert(), a);
+                    let a = self.pop(&dir)?;
+                    self.push(&!dir, a);
                 }
                 "over" => {
-                    let a = self.pop(&dir);
-                    let b = self.pop(&dir);
+                    let a = self.pop(&dir)?;
+                    let b = self.pop(&dir)?;
                     self.push(&dir, b);
                     self.push(&dir, a);
                     self.push(&dir, b);
                 }
                 "drop" => {
-                    self.pop(&dir);
+                    self.pop(&dir)?;
                 }
                 "shr" => {
-                    let a = self.pop(&dir);
-                    let b = self.pop(&dir);
+                    let a = self.pop(&dir)?;
+                    let b = self.pop(&dir)?;
                     self.push(&dir, b >> a);
                 }
                 "shl" => {
-                    let a = self.pop(&dir);
-                    let b = self.pop(&dir);
+                    let a = self.pop(&dir)?;
+                    let b = self.pop(&dir)?;
                     self.push(&dir, b << a);
                 }
                 "eq" => {
-                    let a = self.pop(&dir);
-                    let b = self.pop(&dir);
+                    let a = self.pop(&dir)?;
+                    let b = self.pop(&dir)?;
                     self.push(&dir, (a == b) as i64);
                 }
                 "or" => {
-                    let a = self.pop(&dir);
-                    let b = self.pop(&dir);
+                    let a = self.pop(&dir)?;
+                    let b = self.pop(&dir)?;
                     self.push(&dir, a | b);
                 }
                 "and" => {
-                    let a = self.pop(&dir);
-                    let b = self.pop(&dir);
+                    let a = self.pop(&dir)?;
+                    let b = self.pop(&dir)?;
                     self.push(&dir, a & b);
                 }
                 ">" => {
-                    let a = self.pop(&dir);
-                    let b = self.pop(&dir);
+                    let a = self.pop(&dir)?;
+                    let b = self.pop(&dir)?;
                     self.push(&dir, (a > b) as i64);
                 }
                 "<" => {
-                    let a = self.pop(&dir);
-                    let b = self.pop(&dir);
+                    let a = self.pop(&dir)?;
+                    let b = self.pop(&dir)?;
                     self.push(&dir, (a < b) as i64);
                 }
                 ">=" => {
-                    let a = self.pop(&dir);
-                    let b = self.pop(&dir);
+                    let a = self.pop(&dir)?;
+                    let b = self.pop(&dir)?;
                     self.push(&dir, (a >= b) as i64);
                 }
                 "<=" => {
-                    let a = self.pop(&dir);
-                    let b = self.pop(&dir);
+                    let a = self.pop(&dir)?;
+                    let b = self.pop(&dir)?;
                     self.push(&dir, (a <= b) as i64);
                 }
                 "dup" => {
-                    let temp = self.pop(&dir);
+                    let temp = self.pop(&dir)?;
                     self.push(&dir, temp);
                     self.push(&dir, temp);
                 }
                 "print" => {
-                    let val = self.pop(&dir);
+                    let val = self.pop(&dir)?;
                     println!("{}", val);
                 }
                 "exit" => {
-                    let code = self.pop(&dir);
+                    let code = self.pop(&dir)?;
                     if code != 0 {
                         return Err(format!("Exit code {}", code));
                     }
@@ -191,7 +194,6 @@ impl VM {
                         .map(|x| if *x == 1 { '*' } else { ' ' })
                         .collect::<String>();
                     println!("{}", dots);
-                    //println!("trace: {:?}", self.data);
                 }
                 "label" => {}
                 val => {
@@ -200,7 +202,11 @@ impl VM {
                         val
                     } else {
                         // it's a label reference
-                        (*self.labels.get(val).unwrap()) as i64
+                        (*self
+                            .labels
+                            .get(val)
+                            .ok_or(format!("Label {} does not exist.", val))?)
+                            as i64
                     };
                     self.push(&dir, val);
                 }
@@ -226,8 +232,10 @@ enum Direction {
     Right,
 }
 
-impl Direction {
-    pub fn invert(&self) -> Self {
+impl std::ops::Not for Direction {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
         match self {
             Direction::Left => Direction::Right,
             Direction::Right => Direction::Left,
@@ -237,8 +245,13 @@ impl Direction {
 
 const DEBUG: bool = false;
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let program = std::fs::read_to_string(std::env::args().nth(1).unwrap())?;
+fn main() -> Result<(), String> {
+    let program = std::fs::read_to_string(
+        std::env::args()
+            .nth(1)
+            .ok_or("File name is required.".to_owned())?,
+    )
+    .map_err(|_| "Could not read file.".to_owned())?;
     let mut vm = VM::new();
     vm.load_program(program);
     vm.execute()?;
