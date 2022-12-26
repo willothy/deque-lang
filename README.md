@@ -5,5 +5,7 @@ Written in Rust
 
 ## Usage
 ```
-cargo run -- file.deque
+$ git clone git@github.com:willothy/deque-lang.git
+$ cd deque-lang
+$ cargo run -- file.deque
 ```
