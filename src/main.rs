@@ -50,7 +50,7 @@ impl VM {
                 // convert text to instructions
                 if inst.starts_with("!") {
                     Some(Instruction {
-                        direction: Direction::Right,
+                        direction: Direction::Left,
                         op: (&inst[1..]).to_string(),
                     })
                 } else if inst.ends_with("!") {
@@ -64,7 +64,7 @@ impl VM {
                         direction: Direction::Left,
                     })
                 } else {
-                    None
+                    panic!()
                 }
             })
             .collect();
@@ -84,7 +84,7 @@ impl VM {
                 "add" => {
                     let a = self.pop(&dir);
                     let b = self.pop(&dir);
-                    self.push(&dir, b + a);
+                    self.push(&dir, a + b);
                 }
                 "sub" => {
                     let a = self.pop(&dir);
@@ -98,10 +98,55 @@ impl VM {
                 "jmpif" => {
                     let addr = self.pop(&dir);
                     let cond = self.pop(&dir);
-                    if cond != 0 {
+                    if cond == 1 {
                         self.ip = addr as usize;
                         continue;
                     }
+                }
+                "swap" => {
+                    let a = self.pop(&dir);
+                    let b = self.pop(&dir);
+                    self.push(&dir, a);
+                    self.push(&dir, b);
+                }
+                "move" => {
+                    let a = self.pop(&dir);
+                    self.push(&dir.invert(), a);
+                }
+                "over" => {
+                    let a = self.pop(&dir);
+                    let b = self.pop(&dir);
+                    self.push(&dir, b);
+                    self.push(&dir, a);
+                    self.push(&dir, b);
+                }
+                "drop" => {
+                    self.pop(&dir);
+                }
+                "shr" => {
+                    let a = self.pop(&dir);
+                    let b = self.pop(&dir);
+                    self.push(&dir, b >> a);
+                }
+                "shl" => {
+                    let a = self.pop(&dir);
+                    let b = self.pop(&dir);
+                    self.push(&dir, b << a);
+                }
+                "eq" => {
+                    let a = self.pop(&dir);
+                    let b = self.pop(&dir);
+                    self.push(&dir, (a == b) as i64);
+                }
+                "or" => {
+                    let a = self.pop(&dir);
+                    let b = self.pop(&dir);
+                    self.push(&dir, a | b);
+                }
+                "and" => {
+                    let a = self.pop(&dir);
+                    let b = self.pop(&dir);
+                    self.push(&dir, a & b);
                 }
                 ">" => {
                     let a = self.pop(&dir);
@@ -132,6 +177,22 @@ impl VM {
                     let val = self.pop(&dir);
                     println!("{}", val);
                 }
+                "exit" => {
+                    let code = self.pop(&dir);
+                    if code != 0 {
+                        return Err(format!("Exit code {}", code));
+                    }
+                    return Ok(());
+                }
+                "trace" => {
+                    let dots = self
+                        .data
+                        .iter()
+                        .map(|x| if *x == 1 { '*' } else { ' ' })
+                        .collect::<String>();
+                    println!("{}", dots);
+                    //println!("trace: {:?}", self.data);
+                }
                 "label" => {}
                 val => {
                     let val = if let Ok(val) = val.parse::<i64>() {
@@ -143,6 +204,9 @@ impl VM {
                     };
                     self.push(&dir, val);
                 }
+            }
+            if DEBUG {
+                println!("data {:?}", self.data);
             }
             self.ip += 1;
         }
@@ -162,17 +226,21 @@ enum Direction {
     Right,
 }
 
+impl Direction {
+    pub fn invert(&self) -> Self {
+        match self {
+            Direction::Left => Direction::Right,
+            Direction::Right => Direction::Left,
+        }
+    }
+}
+
+const DEBUG: bool = false;
+
 fn main() -> Result<(), Box<dyn Error>> {
-    let test_program = "
-!10
-loop: !dup !0 !>= !end !jmpif
-    !dup !print
-    !1 !sub
-!loop !jmp
-end:
-    ";
+    let program = std::fs::read_to_string(std::env::args().nth(1).unwrap())?;
     let mut vm = VM::new();
-    vm.load_program(test_program.to_owned());
+    vm.load_program(program);
     vm.execute()?;
     Ok(())
 }
