@@ -1,8 +1,12 @@
-use std::{collections::VecDeque, error::Error};
+use std::{
+    collections::{HashMap, VecDeque},
+    error::Error,
+};
 
 struct VM {
     ip: usize,
     program: Vec<Instruction>,
+    labels: HashMap<String, usize>,
     data: VecDeque<i64>,
 }
 
@@ -11,6 +15,7 @@ impl VM {
         Self {
             ip: 0,
             program: Vec::new(),
+            labels: HashMap::new(),
             data: VecDeque::new(),
         }
     }
@@ -32,15 +37,34 @@ impl VM {
     pub fn load_program(&mut self, program: String) {
         let instructions = program.split_whitespace();
         let instructions: Vec<Instruction> = instructions
-            .map(|inst| {
-                let (direction, op) = if inst.starts_with("!") {
-                    (Direction::Left, &inst[1..])
+            .enumerate()
+            .map(|(addr, inst)| {
+                // load label addresses
+                if inst.ends_with(":") {
+                    let label = &inst[..inst.len() - 1];
+                    self.labels.insert(label.to_ascii_lowercase(), addr);
+                }
+                inst
+            })
+            .filter_map(|inst| {
+                // convert text to instructions
+                if inst.starts_with("!") {
+                    Some(Instruction {
+                        direction: Direction::Right,
+                        op: (&inst[1..]).to_string(),
+                    })
+                } else if inst.ends_with("!") {
+                    Some(Instruction {
+                        direction: Direction::Right,
+                        op: (&inst[..inst.len() - 1]).to_string(),
+                    })
+                } else if inst.ends_with(":") {
+                    Some(Instruction {
+                        op: "label".to_owned(),
+                        direction: Direction::Left,
+                    })
                 } else {
-                    (Direction::Right, &inst[..inst.len() - 1])
-                };
-                Instruction {
-                    direction,
-                    op: op.to_string(),
+                    None
                 }
             })
             .collect();
@@ -67,15 +91,56 @@ impl VM {
                     let b = self.pop(&dir);
                     self.push(&dir, b - a);
                 }
+                "jmp" => {
+                    self.ip = self.pop(&dir) as usize;
+                    continue;
+                }
+                "jmpif" => {
+                    let addr = self.pop(&dir);
+                    let cond = self.pop(&dir);
+                    if cond != 0 {
+                        self.ip = addr as usize;
+                        continue;
+                    }
+                }
+                ">" => {
+                    let a = self.pop(&dir);
+                    let b = self.pop(&dir);
+                    self.push(&dir, (a > b) as i64);
+                }
+                "<" => {
+                    let a = self.pop(&dir);
+                    let b = self.pop(&dir);
+                    self.push(&dir, (a < b) as i64);
+                }
+                ">=" => {
+                    let a = self.pop(&dir);
+                    let b = self.pop(&dir);
+                    self.push(&dir, (a >= b) as i64);
+                }
+                "<=" => {
+                    let a = self.pop(&dir);
+                    let b = self.pop(&dir);
+                    self.push(&dir, (a <= b) as i64);
+                }
+                "dup" => {
+                    let temp = self.pop(&dir);
+                    self.push(&dir, temp);
+                    self.push(&dir, temp);
+                }
                 "print" => {
                     let val = self.pop(&dir);
                     println!("{}", val);
-                    self.push(&dir, val);
                 }
-                inst => {
-                    let val = inst
-                        .parse::<i64>()
-                        .map_err(|_| "Could not parse integer".to_owned())?;
+                "label" => {}
+                val => {
+                    let val = if let Ok(val) = val.parse::<i64>() {
+                        // it's a value
+                        val
+                    } else {
+                        // it's a label reference
+                        (*self.labels.get(val).unwrap()) as i64
+                    };
                     self.push(&dir, val);
                 }
             }
@@ -98,7 +163,14 @@ enum Direction {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let test_program = "3! !5 !2 sub! !add !print";
+    let test_program = "
+!10
+loop: !dup !0 !>= !end !jmpif
+    !dup !print
+    !1 !sub
+!loop !jmp
+end:
+    ";
     let mut vm = VM::new();
     vm.load_program(test_program.to_owned());
     vm.execute()?;
