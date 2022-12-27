@@ -1,9 +1,12 @@
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    io::stdin,
+};
 
 struct VM {
-    ip: usize,
+    ip: i64,
     program: Vec<Instruction>,
-    labels: HashMap<String, usize>,
+    labels: HashMap<String, i64>,
     data: VecDeque<i64>,
 }
 
@@ -45,7 +48,7 @@ impl VM {
                 // load label addresses
                 if inst.ends_with(":") {
                     let label = &inst[..inst.len() - 1];
-                    self.labels.insert(label.to_ascii_lowercase(), addr);
+                    self.labels.insert(label.to_ascii_lowercase(), addr as i64);
                 }
                 inst
             })
@@ -74,111 +77,224 @@ impl VM {
         self.program = instructions;
     }
 
+    fn add(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(dir)?;
+        let b = self.pop(dir)?;
+        self.push(dir, a + b);
+        Ok(())
+    }
+
+    fn sub(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(dir)?;
+        let b = self.pop(dir)?;
+        self.push(dir, b - a);
+        Ok(())
+    }
+
+    fn jmp(&mut self, dir: &Direction) -> Result<(), String> {
+        self.ip = self.pop(dir)?;
+        Ok(())
+    }
+
+    fn jmpif(&mut self, dir: &Direction) -> Result<bool, String> {
+        let addr = self.pop(dir)?;
+        let cond = self.pop(dir)?;
+        if cond == 1 {
+            self.ip = addr;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    fn swap(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(dir)?;
+        let b = self.pop(dir)?;
+        self.push(dir, a);
+        self.push(dir, b);
+        Ok(())
+    }
+
+    fn move_(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(dir)?;
+        self.push(&dir.invert(), a);
+        Ok(())
+    }
+
+    fn over(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(dir)?;
+        let b = self.pop(dir)?;
+        self.push(dir, b);
+        self.push(dir, a);
+        self.push(dir, b);
+        Ok(())
+    }
+
+    fn drop(&mut self, dir: &Direction) -> Result<(), String> {
+        self.pop(dir)?;
+        Ok(())
+    }
+
+    fn shr(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(&dir)?;
+        let b = self.pop(&dir)?;
+        self.push(&dir, b >> a);
+        Ok(())
+    }
+
+    fn shl(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(&dir)?;
+        let b = self.pop(&dir)?;
+        self.push(&dir, b << a);
+        Ok(())
+    }
+
+    fn eq(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(&dir)?;
+        let b = self.pop(&dir)?;
+        self.push(&dir, (a == b) as i64);
+        Ok(())
+    }
+
+    fn or(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(&dir)?;
+        let b = self.pop(&dir)?;
+        self.push(&dir, a | b);
+        Ok(())
+    }
+
+    fn and(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(&dir)?;
+        let b = self.pop(&dir)?;
+        self.push(&dir, a & b);
+        Ok(())
+    }
+
+    fn xor(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(&dir)?;
+        let b = self.pop(&dir)?;
+        self.push(&dir, a ^ b);
+        Ok(())
+    }
+
+    fn not(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(&dir)?;
+        self.push(&dir, !a);
+        Ok(())
+    }
+
+    fn greater(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(&dir)?;
+        let b = self.pop(&dir)?;
+        self.push(&dir, (a > b) as i64);
+        Ok(())
+    }
+
+    fn less(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(&dir)?;
+        let b = self.pop(&dir)?;
+        self.push(&dir, (a < b) as i64);
+        Ok(())
+    }
+
+    fn greater_eq(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(&dir)?;
+        let b = self.pop(&dir)?;
+        self.push(&dir, (a >= b) as i64);
+        Ok(())
+    }
+
+    fn less_eq(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(&dir)?;
+        let b = self.pop(&dir)?;
+        self.push(&dir, (a <= b) as i64);
+        Ok(())
+    }
+
+    fn dup(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(&dir)?;
+        self.push(&dir, a);
+        self.push(&dir, a);
+        Ok(())
+    }
+
+    fn print(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(&dir)?;
+        println!("{}", a);
+        Ok(())
+    }
+
+    fn printc(&mut self, dir: &Direction) -> Result<(), String> {
+        let a = self.pop(&dir)?;
+        println!("{}", a as u8 as char);
+        Ok(())
+    }
+
+    fn read(&mut self, dir: &Direction) -> Result<(), String> {
+        let mut input = String::new();
+        stdin().read_line(&mut input).map_err(|e| e.to_string())?;
+        let a = input.trim().parse::<i64>().map_err(|e| e.to_string())?;
+        self.push(&dir, a);
+        Ok(())
+    }
+
+    fn readc(&mut self, dir: &Direction) -> Result<(), String> {
+        let mut input = String::new();
+        stdin().read_line(&mut input).map_err(|e| e.to_string())?;
+        let a = input.trim().chars().next().unwrap_or(' ') as i64;
+        self.push(&dir, a);
+        Ok(())
+    }
+
+    fn trace(&mut self) {
+        let dots = self
+            .data
+            .iter()
+            .map(|x| if *x == 1 { '*' } else { ' ' })
+            .collect::<String>();
+        println!("{}", dots);
+    }
+
     pub fn execute(&mut self) -> Result<(), String> {
-        let program_len = self.program.len();
+        let program_len = self.program.len() as i64;
         while self.ip < program_len {
             let (op, dir) = {
-                let instruction = &self.program[self.ip];
+                let instruction = &self.program[self.ip as usize];
                 let op = instruction.op.as_str();
                 let dir = instruction.direction.clone();
                 (op, dir)
             };
             match op {
-                "add" => {
-                    let a = self.pop(&dir)?;
-                    let b = self.pop(&dir)?;
-                    self.push(&dir, a + b);
-                }
-                "sub" => {
-                    let a = self.pop(&dir)?;
-                    let b = self.pop(&dir)?;
-                    self.push(&dir, b - a);
-                }
+                "add" => self.add(&dir)?,
+                "sub" => self.sub(&dir)?,
+                "swap" => self.swap(&dir)?,
+                "move" => self.move_(&dir)?,
+                "over" => self.over(&dir)?,
+                "drop" => self.drop(&dir)?,
+                "shr" => self.shr(&dir)?,
+                "shl" => self.shl(&dir)?,
+                "eq" => self.eq(&dir)?,
+                "or" => self.or(&dir)?,
+                "and" => self.and(&dir)?,
+                "xor" => self.xor(&dir)?,
+                "not" => self.not(&dir)?,
+                ">" => self.greater(&dir)?,
+                "<" => self.less(&dir)?,
+                ">=" => self.greater_eq(&dir)?,
+                "<=" => self.less_eq(&dir)?,
+                "dup" => self.dup(&dir)?,
+                "print" => self.print(&dir)?,
+                "printc" => self.printc(&dir)?,
+                "read" => self.read(&dir)?,
+                "readc" => self.readc(&dir)?,
+                "trace" => self.trace(),
                 "jmp" => {
-                    self.ip = self.pop(&dir)? as usize;
+                    self.jmp(&dir)?;
                     continue;
                 }
                 "jmpif" => {
-                    let addr = self.pop(&dir)?;
-                    let cond = self.pop(&dir)?;
-                    if cond == 1 {
-                        self.ip = addr as usize;
+                    if self.jmpif(&dir)? {
                         continue;
                     }
-                }
-                "swap" => {
-                    let a = self.pop(&dir)?;
-                    let b = self.pop(&dir)?;
-                    self.push(&dir, a);
-                    self.push(&dir, b);
-                }
-                "move" => {
-                    let a = self.pop(&dir)?;
-                    self.push(&!dir, a);
-                }
-                "over" => {
-                    let a = self.pop(&dir)?;
-                    let b = self.pop(&dir)?;
-                    self.push(&dir, b);
-                    self.push(&dir, a);
-                    self.push(&dir, b);
-                }
-                "drop" => {
-                    self.pop(&dir)?;
-                }
-                "shr" => {
-                    let a = self.pop(&dir)?;
-                    let b = self.pop(&dir)?;
-                    self.push(&dir, b >> a);
-                }
-                "shl" => {
-                    let a = self.pop(&dir)?;
-                    let b = self.pop(&dir)?;
-                    self.push(&dir, b << a);
-                }
-                "eq" => {
-                    let a = self.pop(&dir)?;
-                    let b = self.pop(&dir)?;
-                    self.push(&dir, (a == b) as i64);
-                }
-                "or" => {
-                    let a = self.pop(&dir)?;
-                    let b = self.pop(&dir)?;
-                    self.push(&dir, a | b);
-                }
-                "and" => {
-                    let a = self.pop(&dir)?;
-                    let b = self.pop(&dir)?;
-                    self.push(&dir, a & b);
-                }
-                ">" => {
-                    let a = self.pop(&dir)?;
-                    let b = self.pop(&dir)?;
-                    self.push(&dir, (a > b) as i64);
-                }
-                "<" => {
-                    let a = self.pop(&dir)?;
-                    let b = self.pop(&dir)?;
-                    self.push(&dir, (a < b) as i64);
-                }
-                ">=" => {
-                    let a = self.pop(&dir)?;
-                    let b = self.pop(&dir)?;
-                    self.push(&dir, (a >= b) as i64);
-                }
-                "<=" => {
-                    let a = self.pop(&dir)?;
-                    let b = self.pop(&dir)?;
-                    self.push(&dir, (a <= b) as i64);
-                }
-                "dup" => {
-                    let temp = self.pop(&dir)?;
-                    self.push(&dir, temp);
-                    self.push(&dir, temp);
-                }
-                "print" => {
-                    let val = self.pop(&dir)?;
-                    println!("{}", val);
                 }
                 "exit" => {
                     let code = self.pop(&dir)?;
@@ -187,14 +303,6 @@ impl VM {
                     }
                     return Ok(());
                 }
-                "trace" => {
-                    let dots = self
-                        .data
-                        .iter()
-                        .map(|x| if *x == 1 { '*' } else { ' ' })
-                        .collect::<String>();
-                    println!("{}", dots);
-                }
                 "label" => {}
                 val => {
                     let val = if let Ok(val) = val.parse::<i64>() {
@@ -202,11 +310,10 @@ impl VM {
                         val
                     } else {
                         // it's a label reference
-                        (*self
+                        *self
                             .labels
                             .get(val)
-                            .ok_or(format!("Label {} does not exist.", val))?)
-                            as i64
+                            .ok_or(format!("Label {} does not exist.", val))?
                     };
                     self.push(&dir, val);
                 }
@@ -232,10 +339,8 @@ enum Direction {
     Right,
 }
 
-impl std::ops::Not for Direction {
-    type Output = Self;
-
-    fn not(self) -> Self::Output {
+impl Direction {
+    fn invert(&self) -> Direction {
         match self {
             Direction::Left => Direction::Right,
             Direction::Right => Direction::Left,
